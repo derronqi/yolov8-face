@@ -3,7 +3,7 @@
 | Method    |  Test Size | Easy  | Medium | Hard  | FLOPs (B) @640 | weights  |
 | ----------| ---------- | ----- | ------ | ----- | -------------- | -------- |
 | yolov8n   | 640        | 94.5  | 92.2   | 79.0  |  -             |  [google](https://drive.google.com/file/d/1qcr9DbgsX3ryrz2uU8w4Xm3cOrRywXqb/view?usp=sharing)       |
-| yolov8s   | 640        | -     | -      | -     |  -             | -       | 
+| yolov8s   | 640        | 96.0  | 94.2   | 82.6  |  -             | -       | 
 | yolov8m   | 640        | -     | -      | -     |  -             | -       |
 | yolov8x   | 640        | -     | -      | -     |  -             | -       |
 
