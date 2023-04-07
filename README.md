@@ -20,3 +20,5 @@
 * [https://github.com/ultralytics/ultralytics](https://github.com/ultralytics/ultralytics)
 
 * [https://github.com/deepcam-cn/yolov5-face](https://github.com/deepcam-cn/yolov5-face)
+
+* [https://github.com/derronqi/yolov7-face](https://github.com/derronqi/yolov7-face)
