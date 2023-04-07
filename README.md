@@ -1,8 +1,7 @@
 # yolov8-face
-coming soon...
 
 
 
-#### yolov8n test
+#### yolov8n-face
 
-![yolov8n](data/test.jpg)
+![yolov8n-face](data/test.jpg)
