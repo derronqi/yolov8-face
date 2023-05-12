@@ -10,11 +10,14 @@
 
 
 
-
-
 #### yolov8n-face
 
 ![yolov8n-face](data/test.jpg)
+
+
+#### demo
+
+![yolov8-face-landmarks-opencv-dnn](https://github.com/hpc203/yolov8-face-landmarks-opencv-dnn)
 
 
 #### References
