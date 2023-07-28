@@ -17,7 +17,12 @@ from ultralytics.yolo.utils import LOGGER, checks, clean_url, emojis, is_online,
 
 GITHUB_ASSET_NAMES = [f'yolov8{k}{suffix}.pt' for k in 'nsmlx' for suffix in ('', '6', '-cls', '-seg', '-pose')] + \
                      [f'yolov5{k}u.pt' for k in 'nsmlx'] + \
-                     [f'yolov3{k}u.pt' for k in ('', '-spp', '-tiny')]
+                     [f'yolov3{k}u.pt' for k in ('', '-spp', '-tiny')] + \
+                     [f'yolo_nas_{k}.pt' for k in 'sml'] + \
+                     [f'sam_{k}.pt' for k in 'bl'] + \
+                     [f'FastSAM-{k}.pt' for k in 'sx'] + \
+                     [f'rtdetr-{k}.pt' for k in 'lx'] + \
+                     ['mobile_sam.pt']
 GITHUB_ASSET_STEMS = [Path(k).stem for k in GITHUB_ASSET_NAMES]
 
 
@@ -34,28 +39,50 @@ def is_url(url, check=True):
     return False
 
 
-def unzip_file(file, path=None, exclude=('.DS_Store', '__MACOSX')):
+def unzip_file(file, path=None, exclude=('.DS_Store', '__MACOSX'), exist_ok=False):
     """
-    Unzip a *.zip file to path/, excluding files containing strings in exclude list
-    Replaces: ZipFile(file).extractall(path=path)
+    Unzips a *.zip file to the specified path, excluding files containing strings in the exclude list.
+
+    If the zipfile does not contain a single top-level directory, the function will create a new
+    directory with the same name as the zipfile (without the extension) to extract its contents.
+    If a path is not provided, the function will use the parent directory of the zipfile as the default path.
+
+    Args:
+        file (str): The path to the zipfile to be extracted.
+        path (str, optional): The path to extract the zipfile to. Defaults to None.
+        exclude (tuple, optional): A tuple of filename strings to be excluded. Defaults to ('.DS_Store', '__MACOSX').
+        exist_ok (bool, optional): Whether to overwrite existing contents if they exist. Defaults to False.
+
+    Raises:
+        BadZipFile: If the provided file does not exist or is not a valid zipfile.
+
+    Returns:
+        (Path): The path to the directory where the zipfile was extracted.
     """
     if not (Path(file).exists() and is_zipfile(file)):
         raise BadZipFile(f"File '{file}' does not exist or is a bad zip file.")
     if path is None:
         path = Path(file).parent  # default path
+
+    # Unzip the file contents
     with ZipFile(file) as zipObj:
-        for i, f in enumerate(zipObj.namelist()):  # list all archived filenames in the zip
-            # If zip does not expand into a directory create a new directory to expand into
-            if i == 0:
-                info = zipObj.getinfo(f)
-                if info.file_size > 0 or not info.filename.endswith('/'):  # element is a file and not a directory
-                    path = Path(path) / Path(file).stem  # define new unzip directory
-                    unzip_dir = path
-                else:
-                    unzip_dir = f
-            if all(x not in f for x in exclude):
-                zipObj.extract(f, path=path)
-        return unzip_dir  # return unzip dir
+        file_list = [f for f in zipObj.namelist() if all(x not in f for x in exclude)]
+        top_level_dirs = {Path(f).parts[0] for f in file_list}
+
+        if len(top_level_dirs) > 1 or not file_list[0].endswith('/'):
+            path = Path(path) / Path(file).stem  # define new unzip directory
+
+        # Check if destination directory already exists and contains files
+        extract_path = Path(path) / list(top_level_dirs)[0]
+        if extract_path.exists() and any(extract_path.iterdir()) and not exist_ok:
+            # If it exists and is not empty, return the path without unzipping
+            LOGGER.info(f'Skipping {file} unzip (already unzipped)')
+            return path
+
+        for f in file_list:
+            zipObj.extract(f, path=path)
+
+    return path  # return unzip dir
 
 
 def check_disk_space(url='https://ultralytics.com/assets/coco128.zip', sf=1.5, hard=True):
@@ -116,9 +143,10 @@ def safe_download(url,
             a successful download. Default: 1E0.
         progress (bool, optional): Whether to display a progress bar during the download. Default: True.
     """
-    if '://' not in str(url) and Path(url).is_file():  # exists ('://' check required in Windows Python<3.10)
+    f = dir / url2file(url) if dir else Path(file)  # URL converted to filename
+    if '://' not in str(url) and Path(url).is_file():  # URL exists ('://' check required in Windows Python<3.10)
         f = Path(url)  # filename
-    else:  # does not exist
+    elif not f.is_file():  # URL and file do not exist
         assert dir or file, 'dir or file required for download'
         f = dir / url2file(url) if dir else Path(file)
         desc = f'Downloading {clean_url(url)} to {f}'
@@ -162,7 +190,7 @@ def safe_download(url,
 
     if unzip and f.exists() and f.suffix in ('', '.zip', '.tar', '.gz'):
         unzip_dir = dir or f.parent  # unzip to dir if provided else unzip in place
-        LOGGER.info(f'Unzipping {f} to {unzip_dir}...')
+        LOGGER.info(f'Unzipping {f} to {unzip_dir.absolute()}...')
         if is_zipfile(f):
             unzip_dir = unzip_file(file=f, path=unzip_dir)  # unzip
         elif f.suffix == '.tar':
@@ -174,16 +202,17 @@ def safe_download(url,
         return unzip_dir
 
 
+def get_github_assets(repo='ultralytics/assets', version='latest'):
+    """Return GitHub repo tag and assets (i.e. ['yolov8n.pt', 'yolov8s.pt', ...])."""
+    if version != 'latest':
+        version = f'tags/{version}'  # i.e. tags/v6.2
+    response = requests.get(f'https://api.github.com/repos/{repo}/releases/{version}').json()  # github api
+    return response['tag_name'], [x['name'] for x in response['assets']]  # tag, assets
+
+
 def attempt_download_asset(file, repo='ultralytics/assets', release='v0.0.0'):
     """Attempt file download from GitHub release assets if not found locally. release = 'latest', 'v6.2', etc."""
     from ultralytics.yolo.utils import SETTINGS  # scoped for circular import
-
-    def github_assets(repository, version='latest'):
-        """Return GitHub repo tag and assets (i.e. ['yolov8n.pt', 'yolov8s.pt', ...])."""
-        if version != 'latest':
-            version = f'tags/{version}'  # i.e. tags/v6.2
-        response = requests.get(f'https://api.github.com/repos/{repository}/releases/{version}').json()  # github api
-        return response['tag_name'], [x['name'] for x in response['assets']]  # tag, assets
 
     # YOLOv3/5u updates
     file = str(file)
@@ -208,10 +237,10 @@ def attempt_download_asset(file, repo='ultralytics/assets', release='v0.0.0'):
         # GitHub assets
         assets = GITHUB_ASSET_NAMES
         try:
-            tag, assets = github_assets(repo, release)
+            tag, assets = get_github_assets(repo, release)
         except Exception:
             try:
-                tag, assets = github_assets(repo)  # latest release
+                tag, assets = get_github_assets(repo)  # latest release
             except Exception:
                 try:
                     tag = subprocess.check_output(['git', 'tag']).decode().split()[-1]

@@ -1,0 +1,109 @@
+# Ultralytics YOLO 🚀, GPL-3.0 license
+# YOLOv8-pose keypoints/pose estimation model. For Usage examples see https://docs.ultralytics.com/tasks/pose
+
+# Parameters
+nc: 80  # number of classes
+depth_multiple: 1.0  # model depth multiple
+width_multiple: 1.0  # layer channel multiple
+
+# yolov7-tiny backbone
+backbone:
+  # [from, number, module, args] c2, k=1, s=1, p=None, g=1, act=True
+  [[-1, 1, Conv, [32, 3, 2, None, 1]],  # 0-P1/2
+
+   [-1, 1, Conv, [64, 3, 2, None, 1]],  # 1-P2/4
+
+   [-1, 1, Conv, [32, 1, 1, None, 1]],
+   [-2, 1, Conv, [32, 1, 1, None, 1]],
+   [-1, 1, Conv, [32, 3, 1, None, 1]],
+   [-1, 1, Conv, [32, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [64, 1, 1, None, 1]],  # 7
+
+   [-1, 1, MP, []],  # 8-P3/8
+   [-1, 1, Conv, [64, 1, 1, None, 1]],
+   [-2, 1, Conv, [64, 1, 1, None, 1]],
+   [-1, 1, Conv, [64, 3, 1, None, 1]],
+   [-1, 1, Conv, [64, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [128, 1, 1, None, 1]],  # 14
+
+   [-1, 1, MP, []],  # 15-P4/16
+   [-1, 1, Conv, [128, 1, 1, None, 1]],
+   [-2, 1, Conv, [128, 1, 1, None, 1]],
+   [-1, 1, Conv, [128, 3, 1, None, 1]],
+   [-1, 1, Conv, [128, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [256, 1, 1, None, 1]],  # 21
+
+   [-1, 1, MP, []],  # 22-P5/32
+   [-1, 1, Conv, [256, 1, 1, None, 1]],
+   [-2, 1, Conv, [256, 1, 1, None, 1]],
+   [-1, 1, Conv, [256, 3, 1, None, 1]],
+   [-1, 1, Conv, [256, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [512, 1, 1, None, 1]],  # 28
+  ]
+
+# yolov7-tiny head
+head:
+  [[-1, 1, Conv, [256, 1, 1, None, 1]],
+   [-2, 1, Conv, [256, 1, 1, None, 1]],
+   [-1, 1, SPF, [5]],
+   [-2, 1, SPF, [9]],
+   [-3, 1, SPF, [13]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [256, 1, 1, None, 1]],
+   [[-1, -7], 1, Concat, [1]],
+   [-1, 1, Conv, [256, 1, 1, None, 1]],  # 37
+
+   [-1, 1, Conv, [128, 1, 1, None, 1]],
+   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
+   [21, 1, Conv, [128, 1, 1, None, 1]], # route backbone P4
+   [[-1, -2], 1, Concat, [1]],
+
+   [-1, 1, Conv, [64, 1, 1, None, 1]],
+   [-2, 1, Conv, [64, 1, 1, None, 1]],
+   [-1, 1, Conv, [64, 3, 1, None, 1]],
+   [-1, 1, Conv, [64, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [128, 1, 1, None, 1]],  # 47
+
+   [-1, 1, Conv, [64, 1, 1, None, 1]],
+   [-1, 1, nn.Upsample, [None, 2, 'nearest']],
+   [14, 1, Conv, [64, 1, 1, None, 1]], # route backbone P3
+   [[-1, -2], 1, Concat, [1]],
+
+   [-1, 1, Conv, [32, 1, 1, None, 1]],
+   [-2, 1, Conv, [32, 1, 1, None, 1]],
+   [-1, 1, Conv, [32, 3, 1, None, 1]],
+   [-1, 1, Conv, [32, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [64, 1, 1, None, 1]],  # 57
+
+   [-1, 1, Conv, [128, 3, 2, None, 1]],
+   [[-1, 47], 1, Concat, [1]],
+
+   [-1, 1, Conv, [64, 1, 1, None, 1]],
+   [-2, 1, Conv, [64, 1, 1, None, 1]],
+   [-1, 1, Conv, [64, 3, 1, None, 1]],
+   [-1, 1, Conv, [64, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [128, 1, 1, None, 1]],  # 65
+
+   [-1, 1, Conv, [256, 3, 2, None, 1]],
+   [[-1, 37], 1, Concat, [1]],
+
+   [-1, 1, Conv, [128, 1, 1, None, 1]],
+   [-2, 1, Conv, [128, 1, 1, None, 1]],
+   [-1, 1, Conv, [128, 3, 1, None, 1]],
+   [-1, 1, Conv, [128, 3, 1, None, 1]],
+   [[-1, -2, -3, -4], 1, Concat, [1]],
+   [-1, 1, Conv, [256, 1, 1, None, 1]],  # 73
+
+   [57, 1, Conv, [128, 3, 1, None, 1]],
+   [65, 1, Conv, [256, 3, 1, None, 1]],
+   [73, 1, Conv, [512, 3, 1, None, 1]],
+
+   [[74,75,76], 1, Detect, [nc]],   # Detect(P3, P4, P5)
+  ]

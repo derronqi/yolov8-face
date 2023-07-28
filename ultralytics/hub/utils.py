@@ -2,6 +2,7 @@
 
 import os
 import platform
+import random
 import sys
 import threading
 import time
@@ -77,10 +78,13 @@ def requests_with_progress(method, url, **kwargs):
         return requests.request(method, url, **kwargs)
     response = requests.request(method, url, stream=True, **kwargs)
     total = int(response.headers.get('content-length', 0))  # total size
-    pbar = tqdm(total=total, unit='B', unit_scale=True, unit_divisor=1024, bar_format=TQDM_BAR_FORMAT)
-    for data in response.iter_content(chunk_size=1024):
-        pbar.update(len(data))
-    pbar.close()
+    try:
+        pbar = tqdm(total=total, unit='B', unit_scale=True, unit_divisor=1024, bar_format=TQDM_BAR_FORMAT)
+        for data in response.iter_content(chunk_size=1024):
+            pbar.update(len(data))
+        pbar.close()
+    except requests.exceptions.ChunkedEncodingError:  # avoid 'Connection broken: IncompleteRead' warnings
+        response.close()
     return response
 
 
@@ -147,7 +151,7 @@ class Events:
     disabled when sync=False. Run 'yolo settings' to see and update settings YAML file.
 
     Attributes:
-        url (str): The GA4 Measurement Protocol URL.
+        url (str): The URL to send anonymous events.
         rate_limit (float): The rate limit in seconds for sending events.
         metadata (dict): A dictionary containing metadata about the environment.
         enabled (bool): A flag to enable or disable Events based on certain conditions.
@@ -160,14 +164,16 @@ class Events:
         Initializes the Events object with default values for events, rate_limit, and metadata.
         """
         self.events = []  # events list
-        self.rate_limit = 10.0  # rate limit (seconds)
+        self.rate_limit = 60.0  # rate limit (seconds)
         self.t = 0.0  # rate limit timer (seconds)
         self.metadata = {
             'cli': Path(sys.argv[0]).name == 'yolo',
             'install': 'git' if is_git_dir() else 'pip' if is_pip_package() else 'other',
-            'python': platform.python_version(),
+            'python': '.'.join(platform.python_version_tuple()[:2]),  # i.e. 3.10
             'version': __version__,
-            'env': ENVIRONMENT}
+            'env': ENVIRONMENT,
+            'session_id': round(random.random() * 1E15),
+            'engagement_time_msec': 1000}
         self.enabled = \
             SETTINGS['sync'] and \
             RANK in (-1, 0) and \
@@ -180,7 +186,7 @@ class Events:
         Attempts to add a new event to the events list and send events if the rate limit is reached.
 
         Args:
-            cfg: The configuration object containing mode and task information.
+            cfg (IterableSimpleNamespace): The configuration object containing mode and task information.
         """
         if not self.enabled:
             # Events disabled, do nothing
@@ -201,7 +207,9 @@ class Events:
 
         # Time is over rate limiter, send now
         data = {'client_id': SETTINGS['uuid'], 'events': self.events}  # SHA-256 anonymized UUID hash and events list
-        smart_request('post', self.url, json=data, retry=0, code=3)  # equivalent to requests.post(self.url, json=data)
+
+        # POST equivalent to requests.post(self.url, json=data)
+        smart_request('post', self.url, json=data, retry=0, verbose=False)
 
         # Reset events and rate limit timer
         self.events = []

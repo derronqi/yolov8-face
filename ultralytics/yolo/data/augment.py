@@ -93,7 +93,7 @@ class BaseMixTransform:
             indexes = [indexes]
 
         # Get images information will be used for Mosaic or MixUp
-        mix_labels = [self.dataset.get_label_info(i) for i in indexes]
+        mix_labels = [self.dataset.get_image_and_label(i) for i in indexes]
 
         if self.pre_transform is not None:
             for i, data in enumerate(mix_labels):
@@ -115,30 +115,45 @@ class BaseMixTransform:
 
 
 class Mosaic(BaseMixTransform):
-    """Mosaic augmentation.
-    Args:
-        imgsz (Sequence[int]): Image size after mosaic pipeline of single
-            image. The shape order should be (height, width).
-            Default to (640, 640).
+    """
+    Mosaic augmentation.
+
+    This class performs mosaic augmentation by combining multiple (4 or 9) images into a single mosaic image.
+    The augmentation is applied to a dataset with a given probability.
+
+    Attributes:
+        dataset: The dataset on which the mosaic augmentation is applied.
+        imgsz (int, optional): Image size (height and width) after mosaic pipeline of a single image. Default to 640.
+        p (float, optional): Probability of applying the mosaic augmentation. Must be in the range 0-1. Default to 1.0.
+        n (int, optional): The grid size, either 4 (for 2x2) or 9 (for 3x3).
     """
 
-    def __init__(self, dataset, imgsz=640, p=1.0, border=(0, 0)):
+    def __init__(self, dataset, imgsz=640, p=1.0, n=4):
         """Initializes the object with a dataset, image size, probability, and border."""
-        assert 0 <= p <= 1.0, 'The probability should be in range [0, 1]. ' f'got {p}.'
+        assert 0 <= p <= 1.0, f'The probability should be in range [0, 1], but got {p}.'
+        assert n in (4, 9), 'grid must be equal to 4 or 9.'
         super().__init__(dataset=dataset, p=p)
         self.dataset = dataset
         self.imgsz = imgsz
-        self.border = border
+        self.border = (-imgsz // 2, -imgsz // 2)  # width, height
+        self.n = n
 
-    def get_indexes(self):
-        """Return a list of 3 random indexes from the dataset."""
-        return [random.randint(0, len(self.dataset) - 1) for _ in range(3)]
+    def get_indexes(self, buffer=True):
+        """Return a list of random indexes from the dataset."""
+        if buffer:  # select images from buffer
+            return random.choices(list(self.dataset.buffer), k=self.n - 1)
+        else:  # select any images
+            return [random.randint(0, len(self.dataset) - 1) for _ in range(self.n - 1)]
 
     def _mix_transform(self, labels):
         """Apply mixup transformation to the input image and labels."""
+        assert labels.get('rect_shape', None) is None, 'rect and mosaic are mutually exclusive.'
+        assert len(labels.get('mix_labels', [])), 'There are no other images for mosaic augment.'
+        return self._mosaic4(labels) if self.n == 4 else self._mosaic9(labels)
+
+    def _mosaic4(self, labels):
+        """Create a 2x2 image mosaic."""
         mosaic_labels = []
-        assert labels.get('rect_shape', None) is None, 'rect and mosaic is exclusive.'
-        assert len(labels.get('mix_labels', [])) > 0, 'There are no other images for mosaic augment.'
         s = self.imgsz
         yc, xc = (int(random.uniform(-x, 2 * s + x)) for x in self.border)  # mosaic center x, y
         for i in range(4):
@@ -172,7 +187,56 @@ class Mosaic(BaseMixTransform):
         final_labels['img'] = img4
         return final_labels
 
-    def _update_labels(self, labels, padw, padh):
+    def _mosaic9(self, labels):
+        """Create a 3x3 image mosaic."""
+        mosaic_labels = []
+        s = self.imgsz
+        hp, wp = -1, -1  # height, width previous
+        for i in range(9):
+            labels_patch = labels if i == 0 else labels['mix_labels'][i - 1]
+            # Load image
+            img = labels_patch['img']
+            h, w = labels_patch.pop('resized_shape')
+
+            # Place img in img9
+            if i == 0:  # center
+                img9 = np.full((s * 3, s * 3, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+                h0, w0 = h, w
+                c = s, s, s + w, s + h  # xmin, ymin, xmax, ymax (base) coordinates
+            elif i == 1:  # top
+                c = s, s - h, s + w, s
+            elif i == 2:  # top right
+                c = s + wp, s - h, s + wp + w, s
+            elif i == 3:  # right
+                c = s + w0, s, s + w0 + w, s + h
+            elif i == 4:  # bottom right
+                c = s + w0, s + hp, s + w0 + w, s + hp + h
+            elif i == 5:  # bottom
+                c = s + w0 - w, s + h0, s + w0, s + h0 + h
+            elif i == 6:  # bottom left
+                c = s + w0 - wp - w, s + h0, s + w0 - wp, s + h0 + h
+            elif i == 7:  # left
+                c = s - w, s + h0 - h, s, s + h0
+            elif i == 8:  # top left
+                c = s - w, s + h0 - hp - h, s, s + h0 - hp
+
+            padw, padh = c[:2]
+            x1, y1, x2, y2 = (max(x, 0) for x in c)  # allocate coords
+
+            # Image
+            img9[y1:y2, x1:x2] = img[y1 - padh:, x1 - padw:]  # img9[ymin:ymax, xmin:xmax]
+            hp, wp = h, w  # height, width previous for next iteration
+
+            # Labels assuming imgsz*2 mosaic size
+            labels_patch = self._update_labels(labels_patch, padw + self.border[0], padh + self.border[1])
+            mosaic_labels.append(labels_patch)
+        final_labels = self._cat_labels(mosaic_labels)
+
+        final_labels['img'] = img9[-self.border[0]:self.border[0], -self.border[1]:self.border[1]]
+        return final_labels
+
+    @staticmethod
+    def _update_labels(labels, padw, padh):
         """Update labels."""
         nh, nw = labels['img'].shape[:2]
         labels['instances'].convert_bbox(format='xyxy')
@@ -186,17 +250,20 @@ class Mosaic(BaseMixTransform):
             return {}
         cls = []
         instances = []
+        imgsz = self.imgsz * 2  # mosaic imgsz
         for labels in mosaic_labels:
             cls.append(labels['cls'])
             instances.append(labels['instances'])
         final_labels = {
             'im_file': mosaic_labels[0]['im_file'],
             'ori_shape': mosaic_labels[0]['ori_shape'],
-            'resized_shape': (self.imgsz * 2, self.imgsz * 2),
+            'resized_shape': (imgsz, imgsz),
             'cls': np.concatenate(cls, 0),
             'instances': Instances.concatenate(instances, axis=0),
-            'mosaic_border': self.border}
-        final_labels['instances'].clip(self.imgsz * 2, self.imgsz * 2)
+            'mosaic_border': self.border}  # final_labels
+        final_labels['instances'].clip(imgsz, imgsz)
+        good = final_labels['instances'].remove_zero_area_boxes()
+        final_labels['cls'] = final_labels['cls'][good]
         return final_labels
 
 
@@ -360,7 +427,7 @@ class RandomPerspective:
         """
         if self.pre_transform and 'mosaic_border' not in labels:
             labels = self.pre_transform(labels)
-            labels.pop('ratio_pad')  # do not need ratio pad
+        labels.pop('ratio_pad', None)  # do not need ratio pad
 
         img = labels['img']
         cls = labels['cls']
@@ -471,13 +538,14 @@ class RandomFlip:
 class LetterBox:
     """Resize image and padding for detection, instance segmentation, pose."""
 
-    def __init__(self, new_shape=(640, 640), auto=False, scaleFill=False, scaleup=True, stride=32):
+    def __init__(self, new_shape=(640, 640), auto=False, scaleFill=False, scaleup=True, center=True, stride=32):
         """Initialize LetterBox object with specific parameters."""
         self.new_shape = new_shape
         self.auto = auto
         self.scaleFill = scaleFill
         self.scaleup = scaleup
         self.stride = stride
+        self.center = center  # Put the image in the middle or top-left
 
     def __call__(self, labels=None, image=None):
         """Return updated labels and image with added border."""
@@ -505,15 +573,16 @@ class LetterBox:
             new_unpad = (new_shape[1], new_shape[0])
             ratio = new_shape[1] / shape[1], new_shape[0] / shape[0]  # width, height ratios
 
-        dw /= 2  # divide padding into 2 sides
-        dh /= 2
+        if self.center:
+            dw /= 2  # divide padding into 2 sides
+            dh /= 2
         if labels.get('ratio_pad'):
             labels['ratio_pad'] = (labels['ratio_pad'], (dw, dh))  # for evaluation
 
         if shape[::-1] != new_unpad:  # resize
             img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
-        top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
-        left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+        top, bottom = int(round(dh - 0.1)) if self.center else 0, int(round(dh + 0.1))
+        left, right = int(round(dw - 0.1)) if self.center else 0, int(round(dw + 0.1))
         img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT,
                                  value=(114, 114, 114))  # add border
 
@@ -575,7 +644,8 @@ class CopyPaste:
 
 
 class Albumentations:
-    # YOLOv8 Albumentations class (optional, only used if package is installed)
+    """YOLOv8 Albumentations class (optional, only used if package is installed)"""
+
     def __init__(self, p=1.0):
         """Initialize the transform object for YOLO bbox formatted params."""
         self.p = p
@@ -616,7 +686,7 @@ class Albumentations:
                 if len(new['class_labels']) > 0:  # skip update if no bbox in new im
                     labels['img'] = new['image']
                     labels['cls'] = np.array(new['class_labels'])
-                    bboxes = np.array(new['bboxes'])
+                    bboxes = np.array(new['bboxes'], dtype=np.float32)
             labels['instances'].update(bboxes=bboxes)
         return labels
 
@@ -692,10 +762,10 @@ class Format:
         return masks, instances, cls
 
 
-def v8_transforms(dataset, imgsz, hyp):
+def v8_transforms(dataset, imgsz, hyp, stretch=False):
     """Convert images to a size suitable for YOLOv8 training."""
     pre_transform = Compose([
-        Mosaic(dataset, imgsz=imgsz, p=hyp.mosaic, border=[-imgsz // 2, -imgsz // 2]),
+        Mosaic(dataset, imgsz=imgsz, p=hyp.mosaic),
         CopyPaste(p=hyp.copy_paste),
         RandomPerspective(
             degrees=hyp.degrees,
@@ -703,12 +773,17 @@ def v8_transforms(dataset, imgsz, hyp):
             scale=hyp.scale,
             shear=hyp.shear,
             perspective=hyp.perspective,
-            pre_transform=LetterBox(new_shape=(imgsz, imgsz)),
+            pre_transform=None if stretch else LetterBox(new_shape=(imgsz, imgsz)),
         )])
-    flip_idx = dataset.data.get('flip_idx', None)  # for keypoints augmentation
-    if dataset.use_keypoints and flip_idx is None and hyp.fliplr > 0.0:
-        hyp.fliplr = 0.0
-        LOGGER.warning("WARNING ⚠️ No `flip_idx` provided while training keypoints, setting augmentation 'fliplr=0.0'")
+    flip_idx = dataset.data.get('flip_idx', [])  # for keypoints augmentation
+    if dataset.use_keypoints:
+        kpt_shape = dataset.data.get('kpt_shape', None)
+        if len(flip_idx) == 0 and hyp.fliplr > 0.0:
+            hyp.fliplr = 0.0
+            LOGGER.warning("WARNING ⚠️ No 'flip_idx' array defined in data.yaml, setting augmentation 'fliplr=0.0'")
+        elif flip_idx and (len(flip_idx) != kpt_shape[0]):
+            raise ValueError(f'data.yaml flip_idx={flip_idx} length must be equal to kpt_shape[0]={kpt_shape[0]}')
+
     return Compose([
         pre_transform,
         MixUp(dataset, pre_transform=pre_transform, p=hyp.mixup),
@@ -729,18 +804,25 @@ def classify_transforms(size=224, mean=(0.0, 0.0, 0.0), std=(1.0, 1.0, 1.0)):  #
         return T.Compose([CenterCrop(size), ToTensor()])
 
 
+def hsv2colorjitter(h, s, v):
+    """Map HSV (hue, saturation, value) jitter into ColorJitter values (brightness, contrast, saturation, hue)"""
+    return v, v, s, h
+
+
 def classify_albumentations(
         augment=True,
         size=224,
         scale=(0.08, 1.0),
         hflip=0.5,
         vflip=0.0,
-        jitter=0.4,
+        hsv_h=0.015,  # image HSV-Hue augmentation (fraction)
+        hsv_s=0.7,  # image HSV-Saturation augmentation (fraction)
+        hsv_v=0.4,  # image HSV-Value augmentation (fraction)
         mean=(0.0, 0.0, 0.0),  # IMAGENET_MEAN
         std=(1.0, 1.0, 1.0),  # IMAGENET_STD
         auto_aug=False,
 ):
-    # YOLOv8 classification Albumentations (optional, only used if package is installed)
+    """YOLOv8 classification Albumentations (optional, only used if package is installed)."""
     prefix = colorstr('albumentations: ')
     try:
         import albumentations as A
@@ -750,16 +832,15 @@ def classify_albumentations(
         if augment:  # Resize and crop
             T = [A.RandomResizedCrop(height=size, width=size, scale=scale)]
             if auto_aug:
-                # TODO: implement AugMix, AutoAug & RandAug in albumentation
+                # TODO: implement AugMix, AutoAug & RandAug in albumentations
                 LOGGER.info(f'{prefix}auto augmentations are currently not supported')
             else:
                 if hflip > 0:
                     T += [A.HorizontalFlip(p=hflip)]
                 if vflip > 0:
                     T += [A.VerticalFlip(p=vflip)]
-                if jitter > 0:
-                    jitter = float(jitter)
-                    T += [A.ColorJitter(jitter, jitter, jitter, 0)]  # brightness, contrast, saturation, 0 hue
+                if any((hsv_h, hsv_s, hsv_v)):
+                    T += [A.ColorJitter(*hsv2colorjitter(hsv_h, hsv_s, hsv_v))]  # brightness, contrast, saturation, hue
         else:  # Use fixed crop for eval set (reproducibility)
             T = [A.SmallestMaxSize(max_size=size), A.CenterCrop(height=size, width=size)]
         T += [A.Normalize(mean=mean, std=std), ToTensorV2()]  # Normalize and convert to Tensor
@@ -773,7 +854,8 @@ def classify_albumentations(
 
 
 class ClassifyLetterBox:
-    # YOLOv8 LetterBox class for image preprocessing, i.e. T.Compose([LetterBox(size), ToTensor()])
+    """YOLOv8 LetterBox class for image preprocessing, i.e. T.Compose([LetterBox(size), ToTensor()])"""
+
     def __init__(self, size=(640, 640), auto=False, stride=32):
         """Resizes image and crops it to center with max dimensions 'h' and 'w'."""
         super().__init__()
@@ -793,7 +875,8 @@ class ClassifyLetterBox:
 
 
 class CenterCrop:
-    # YOLOv8 CenterCrop class for image preprocessing, i.e. T.Compose([CenterCrop(size), ToTensor()])
+    """YOLOv8 CenterCrop class for image preprocessing, i.e. T.Compose([CenterCrop(size), ToTensor()])"""
+
     def __init__(self, size=640):
         """Converts an image from numpy array to PyTorch tensor."""
         super().__init__()
@@ -807,7 +890,8 @@ class CenterCrop:
 
 
 class ToTensor:
-    # YOLOv8 ToTensor class for image preprocessing, i.e. T.Compose([LetterBox(size), ToTensor()])
+    """YOLOv8 ToTensor class for image preprocessing, i.e. T.Compose([LetterBox(size), ToTensor()])."""
+
     def __init__(self, half=False):
         """Initialize YOLOv8 ToTensor object with optional half-precision support."""
         super().__init__()

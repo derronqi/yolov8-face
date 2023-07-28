@@ -1,9 +1,12 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
-from ultralytics.yolo.data import build_classification_dataloader
+import torch
+
+from ultralytics.yolo.data import ClassificationDataset, build_dataloader
 from ultralytics.yolo.engine.validator import BaseValidator
 from ultralytics.yolo.utils import DEFAULT_CFG, LOGGER
 from ultralytics.yolo.utils.metrics import ClassifyMetrics, ConfusionMatrix
+from ultralytics.yolo.utils.plotting import plot_images
 
 
 class ClassificationValidator(BaseValidator):
@@ -43,7 +46,11 @@ class ClassificationValidator(BaseValidator):
         """Finalizes metrics of the model such as confusion_matrix and speed."""
         self.confusion_matrix.process_cls_preds(self.pred, self.targets)
         if self.args.plots:
-            self.confusion_matrix.plot(save_dir=self.save_dir, names=list(self.names.values()))
+            for normalize in True, False:
+                self.confusion_matrix.plot(save_dir=self.save_dir,
+                                           names=self.names.values(),
+                                           normalize=normalize,
+                                           on_plot=self.on_plot)
         self.metrics.speed = self.speed
         self.metrics.confusion_matrix = self.confusion_matrix
 
@@ -52,19 +59,36 @@ class ClassificationValidator(BaseValidator):
         self.metrics.process(self.targets, self.pred)
         return self.metrics.results_dict
 
+    def build_dataset(self, img_path):
+        return ClassificationDataset(root=img_path, args=self.args, augment=False)
+
     def get_dataloader(self, dataset_path, batch_size):
         """Builds and returns a data loader for classification tasks with given parameters."""
-        return build_classification_dataloader(path=dataset_path,
-                                               imgsz=self.args.imgsz,
-                                               batch_size=batch_size,
-                                               augment=False,
-                                               shuffle=False,
-                                               workers=self.args.workers)
+        dataset = self.build_dataset(dataset_path)
+        return build_dataloader(dataset, batch_size, self.args.workers, rank=-1)
 
     def print_results(self):
         """Prints evaluation metrics for YOLO object detection model."""
         pf = '%22s' + '%11.3g' * len(self.metrics.keys)  # print format
         LOGGER.info(pf % ('all', self.metrics.top1, self.metrics.top5))
+
+    def plot_val_samples(self, batch, ni):
+        """Plot validation image samples."""
+        plot_images(images=batch['img'],
+                    batch_idx=torch.arange(len(batch['img'])),
+                    cls=batch['cls'].squeeze(-1),
+                    fname=self.save_dir / f'val_batch{ni}_labels.jpg',
+                    names=self.names,
+                    on_plot=self.on_plot)
+
+    def plot_predictions(self, batch, preds, ni):
+        """Plots predicted bounding boxes on input images and saves the result."""
+        plot_images(batch['img'],
+                    batch_idx=torch.arange(len(batch['img'])),
+                    cls=torch.argmax(preds, dim=1),
+                    fname=self.save_dir / f'val_batch{ni}_pred.jpg',
+                    names=self.names,
+                    on_plot=self.on_plot)  # pred
 
 
 def val(cfg=DEFAULT_CFG, use_python=False):
