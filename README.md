@@ -29,6 +29,10 @@
 #### Android demo 
 * [ncnn-android-yolov8-face](https://github.com/derronqi/ncnn-android-yolov8-face)
 
+#### QQ Group
+![QQ Group](data/qrcode_1712047038063.jpg)
+
+
 #### References
 
 * [https://github.com/ultralytics/ultralytics](https://github.com/ultralytics/ultralytics)
