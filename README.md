@@ -15,10 +15,12 @@
 ![yolov8n-face](data/test.jpg)
 
 
-#### demo
+#### OpenCV demo
 
 * [yolov8-face-landmarks-opencv-dnn](https://github.com/hpc203/yolov8-face-landmarks-opencv-dnn)
 
+#### Android demo 
+* [ncnn-android-yolov8-face](https://github.com/derronqi/ncnn-android-yolov8-face)
 
 #### References
 
