@@ -28,6 +28,24 @@ class VarifocalLoss(nn.Module):
         return loss
 
 
+def Wasserstein(box1, box2, xywh=True):
+    box2 = box2.T
+    if xywh:
+        b1_cx, b1_cy = (box1[0] + box1[2]) / 2, (box1[1] + box1[3]) / 2
+        b1_w, b1_h = box1[2] - box1[0], box1[3] - box1[1]
+        b2_cx, b2_cy = (box2[0] + box2[0]) / 2, (box2[1] + box2[3]) / 2
+        b1_w, b1_h = box2[2] - box2[0], box2[3] - box2[1]
+    else:
+        b1_cx, b1_cy, b1_w, b1_h = box1[0], box1[1], box1[2], box1[3]
+        b2_cx, b2_cy, b2_w, b2_h = box2[0], box2[1], box2[2], box2[3]
+    cx_L2Norm = torch.pow((b1_cx - b2_cx), 2)
+    cy_L2Norm = torch.pow((b1_cy - b2_cy), 2)
+    p1 = cx_L2Norm + cy_L2Norm
+    w_FroNorm = torch.pow((b1_w - b2_w)/2, 2)
+    h_FroNorm = torch.pow((b1_h - b2_h)/2, 2)
+    p2 = w_FroNorm + h_FroNorm
+    return p1 + p2
+
 # Losses
 class FocalLoss(nn.Module):
     """Wraps focal loss around existing loss_fcn(), i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=1.5)."""
@@ -63,7 +81,7 @@ class BboxLoss(nn.Module):
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, MDPIoU=True)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
 
         # DFL loss
@@ -86,7 +104,6 @@ class BboxLoss(nn.Module):
         wr = 1 - wl  # weight right
         return (F.cross_entropy(pred_dist, tl.view(-1), reduction='none').view(tl.shape) * wl +
                 F.cross_entropy(pred_dist, tr.view(-1), reduction='none').view(tl.shape) * wr).mean(-1, keepdim=True)
-
 
 class WingLoss(nn.Module):
     def __init__(self, w=10, e=2):

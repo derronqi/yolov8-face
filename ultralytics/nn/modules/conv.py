@@ -24,7 +24,7 @@ def autopad(k, p=None, d=1):  # kernel, padding, dilation
 
 class Conv(nn.Module):
     """Standard convolution with args(ch_in, ch_out, kernel, stride, padding, groups, dilation, activation)."""
-    default_act = nn.SiLU()  # default activation
+    default_act = nn.ReLU(inplace=True)  # default activation
 
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1, d=1, act=True):
         """Initialize Conv layer with given arguments including activation."""

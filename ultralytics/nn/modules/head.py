@@ -43,6 +43,13 @@ class Detect(nn.Module):
     def forward(self, x):
         """Concatenates and returns predicted bounding boxes and class probabilities."""
         shape = x[0].shape  # BCHW
+        #if self.export:
+        #    res = list()
+        #    for i in range(self.nl):
+        #        shape = x[i].shape
+        #        res.append(self.cv2[i](x[i]))
+        #        res.append(self.cv3[i](x[i]).sigmoid())
+        #    return res
         for i in range(self.nl):
             x[i] = torch.cat((self.cv2[i](x[i]), self.cv3[i](x[i])), 1)
         if self.training:
@@ -115,6 +122,11 @@ class Pose(Detect):
     def forward(self, x):
         """Perform forward pass through YOLO model and return predictions."""
         bs = x[0].shape[0]  # batch size
+        #if self.export:
+        #    res = self.detect(self, x)
+        #    for i in range(self.nl):
+        #        res.append(self.cv4[i](x[i]))
+        #    return res
         if self.export:
             temp_x = [xi.clone() for xi in x]
             x = self.detect(self, x)
@@ -122,6 +134,7 @@ class Pose(Detect):
             for i in range(self.nl):
                 result.append(torch.cat([x[i],self.cv4[i](temp_x[i])], 1))
             return result
+
         kpt = torch.cat([self.cv4[i](x[i]).view(bs, self.nk, -1) for i in range(self.nl)], -1)  # (bs, 17*3, h*w)
         x = self.detect(self, x)
         if self.training:
