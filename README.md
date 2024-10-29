@@ -7,12 +7,12 @@
 
 | Method          |  Test Size | Easy  | Medium | Hard  | FLOPs (B) @640 | weights  |
 | ----------------| ---------- | ----- | ------ | ----- | -------------- | -------- |
-| yolov8-lite-t   | 640        | 90.3  | 87.5   | 72.8  |  -             | [google](https://drive.google.com/file/d/1vFMGW8xtRVo9bfC9yJVWWGY7vVxbLh94/view?usp=sharing) |
-| yolov8-lite-s   | 640        | 93.4  | 91.1   | 77.7  |  -             | [google](https://drive.google.com/file/d/1ckpBT8KfwURTvTm5pa-cMC89A0V5jbaq/view?usp=sharing) |
-| yolov8n         | 640        | 94.5  | 92.2   | 79.0  |  -             | [google](https://drive.google.com/file/d/1qcr9DbgsX3ryrz2uU8w4Xm3cOrRywXqb/view?usp=sharing) |
-| yolov8s         | 640        | 96.0  | 94.2   | 82.6  |  -             | -       | 
-| yolov8m         | 640        | 96.6  | 95.0   | 84.1  |  -             | -       |
-| yolov9c         | 640        | -     | -      | -     |  -             | -       |
+| yolov8-lite-t   | 640        | 90.4  | 87.7   | 73.3  |  -             | [google](https://drive.google.com/file/d/1vFMGW8xtRVo9bfC9yJVWWGY7vVxbLh94/view?usp=sharing) |
+| yolov8-lite-s   | 640        | 93.4  | 91.2   | 78.6  |  -             | [google](https://drive.google.com/file/d/1ckpBT8KfwURTvTm5pa-cMC89A0V5jbaq/view?usp=sharing) |
+| yolov8n         | 640        | 94.6  | 92.3   | 79.6  |  -             | [google](https://drive.google.com/file/d/1qcr9DbgsX3ryrz2uU8w4Xm3cOrRywXqb/view?usp=sharing) |
+| yolov8s         | 640        | 96.1  | 94.2   | 83.1  |  -             | -       | 
+| yolov8m         | 640        | 96.6  | 95.0   | 84.7  |  -             | -       |
+| yolov9c         | 640        | 95.6  | 94.1   | 83.2  |  -             | -       |
 | yolov9e         | 640        | -     | -      | -     |  -             | -       |
 
 
