@@ -25,7 +25,7 @@ if __name__ == '__main__':
         num_images = len(test_dataset)
     for img_name in test_dataset:
         image_path = testset_folder + img_name
-        results = model.predict(source=image_path, imgsz=opt.img_size, conf=opt.conf_thres, iou=opt.iou_thres, augment=opt.augment, device=opt.device)
+        results = model.predict(source=image_path, imgsz=opt.img_size, conf=opt.conf_thres, iou=opt.iou_thres, augment=opt.augment, device=opt.device, max_det=2048)
 
         save_name = opt.save_folder + img_name[:-4] + ".txt"
         dirname = os.path.dirname(save_name)
